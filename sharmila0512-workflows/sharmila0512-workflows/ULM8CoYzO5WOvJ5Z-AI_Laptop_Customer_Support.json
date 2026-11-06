@@ -1,0 +1,580 @@
+{
+  "name": "AI Laptop Customer Support",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "640fc5e2-7a78-4433-9330-2c20255866b9",
+              "name": "=email_subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "699079f3-0e07-46fd-b25c-900b77d7ab24",
+              "name": "=email_body",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "28e4df87-01ff-4992-a4d8-7d2074dec01f",
+              "name": "customer_address",
+              "value": "={{ $json.from.value[0].address }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "c1f87622-53f7-4f98-8c84-1718330d7fb9",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds the customer reply. Sits between \"Execute a SQL query\" and the Gmail \"Send a message\" node.\n// It reads the interpreted requirements from the node named \"Code in JavaScript2\".\nconst req = $('Code in JavaScript2').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.product_name);\n\nconst inr = n => '₹' + Number(n).toLocaleString('en-IN');\nconst lines = ['Hello,', ''];\n\nif (req.needs_clarification) {\n  lines.push(\n    'Thank you for your enquiry. To recommend the right laptop, could you please tell me:',\n    '- your maximum budget (for example, ₹80,000)',\n    '- the RAM you need (for example, 16 GB)',\n    '- any storage or brand preference'\n  );\n} else if (rows.length === 0) {\n  lines.push('Thank you for your enquiry. Here is how I understood your request:');\n  req.assumptions.forEach(a => lines.push('- ' + a));\n  lines.push(\n    '',\n    'Unfortunately, I could not find a laptop in our list that meets all of these requirements.',\n    'You could try a slightly higher budget or a lower RAM requirement, and I will search again.'\n  );\n} else {\n  lines.push('Thank you for your enquiry. Here is how I understood your request:');\n  req.assumptions.forEach(a => lines.push('- ' + a));\n  lines.push(\n    '',\n    rows.length === 1 ? 'Here is the best match:' : 'Here are the top ' + rows.length + ' matches:',\n    ''\n  );\n  rows.forEach((r, i) => {\n    lines.push(\n      (i + 1) + '. ' + String(r.product_name).trim(),\n      'Price: ' + inr(r.price_inr),\n      'RAM: ' + r.ram_gb + ' GB',\n      'Storage: ' + (r.storage_gb + ' GB ' + (r.storage_type || '')).trim(),\n      'Processor: ' + (r.processor || 'Not specified'),\n      'Operating system: ' + (r.operating_system || 'Not specified'),\n      ''\n    );\n  });\n  lines.push('Please confirm the latest price and availability with the seller before purchasing.');\n}\n\nlines.push('', 'Regards,', 'Customer Support');\n\nreturn [{ json: { reply: lines.join('\\n') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "8bf29de7-e0fa-4601-9354-6780c645a990",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://gist.githubusercontent.com/hm0421/b18aff20c7dba5fcc1df4eb1758a469f/raw/c55d9b7b439cf52ac47b43d01bfff88e9c96bd42/laptops.csv",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        80,
+        544
+      ],
+      "id": "ce09eae3-6763-4ff9-b701-660193a953cb",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        544
+      ],
+      "id": "70ea06e8-56b1-44d8-be30-c6c19085b9ba",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.email_body }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "ram_gb",
+              "description": "Minimum RAM required in GB. Return a number."
+            },
+            {
+              "name": "storage_gb",
+              "description": "Minimum SSD storage required in GB. Convert TB to GB using 1 TB = 1024 GB. Return a number."
+            },
+            {
+              "name": "budget_inr",
+              "description": "Maximum customer budget in Indian rupees. Return a number without currency symbols."
+            },
+            {
+              "name": "use_case",
+              "description": "The customer's intended laptop use, such as programming, gaming, or general work. Return null if not specified."
+            },
+            {
+              "name": "budget_text",
+              "description": "The budget exactly as the customer wrote it, e.g. \"80k\" or \"under 1 lakh\". Empty if none."
+            },
+            {
+              "name": "ram_text",
+              "description": "The RAM requirement exactly as written, e.g. \"16 GB\" or \"high ram\". Empty if none."
+            },
+            {
+              "name": "storage_text",
+              "description": "The storage requirement exactly as written, e.g. \"1 TB\". Empty if none."
+            },
+            {
+              "name": "quantity_text",
+              "description": "How many laptops they want, as written, e.g. \"one\". Empty if none."
+            },
+            {
+              "name": "brand",
+              "description": "A brand name if mentioned. Empty if none."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "1ef5af17-808e-4aaf-9957-50984f939d3b",
+      "name": "Information Extractor"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        208
+      ],
+      "id": "9a1bc890-724c-4f47-8783-92540e273bec",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "laptops",
+          "mode": "list",
+          "cachedResultName": "laptops"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "product_name": "={{ $json.product_name }}",
+            "price_inr": "={{ $json.price_inr }}",
+            "ram_gb": "={{ $json.ram_gb }}",
+            "ssd_gb": "={{ $json.ssd_gb }}",
+            "processor": "={{ $json.processor }}",
+            "operating_system": "={{ $json.operating_system }}",
+            "display": "={{ $json.display }}",
+            "warranty": "={{ $json.warranty }}",
+            "source": "={{ $json.source }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "product_name",
+              "displayName": "product_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price_inr",
+              "displayName": "price_inr",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ram_gb",
+              "displayName": "ram_gb",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ssd_gb",
+              "displayName": "ssd_gb",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processor",
+              "displayName": "processor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "operating_system",
+              "displayName": "operating_system",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "display",
+              "displayName": "display",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "warranty",
+              "displayName": "warranty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        64,
+        768
+      ],
+      "id": "b31eb81f-fa56-4dbc-9a45-bbbf995724a2",
+      "name": "Insert rows in a table",
+      "credentials": {
+        "postgres": {
+          "id": "aI4RjSOBPPMmejQI",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst rows = $input.all();\n\nfunction parsePrice(value) {\n  const match = String(value ?? \"\").replace(/,/g, \"\").match(/\\d+(?:\\.\\d+)?/);\n  return match ? Number(match[0]) : null;\n}\n\nfunction parseRam(value, title) {\n  const text = `${value ?? \"\"} ${title ?? \"\"}`;\n  const match = text.match(/(\\d+)\\s*GB\\s*(?:DDR\\d*)?\\s*(?:RAM)?/i);\n  return match ? Number(match[1]) : null;\n}\n\nfunction parseSsdGB(value, title) {\n  // Prefer the combined RAM/storage description, then the product title.\n  for (const text of [String(value ?? \"\"), String(title ?? \"\")]) {\n    const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*(TB|GB)\\s*SSD\\b/i);\n    if (match) {\n      return Math.round(\n        Number(match[1]) * (match[2].toUpperCase() === \"TB\" ? 1024 : 1)\n      );\n    }\n  }\n  return null;\n}\n\nreturn rows.map(({ json: row }) => {\n  const title = String(row.title ?? \"\");\n  const ramStorage = String(row.RAM ?? \"\");\n  const osMatch = title.match(/\\b(Windows\\s+\\d+(?:\\s+\\w+){0,2})/i);\n\n  return {\n    json: {\n      product_name: title,\n      price_inr: parsePrice(row.price),\n      ram_gb: parseRam(ramStorage, title),\n      ssd_gb: parseSsdGB(ramStorage, title),\n      processor: row.Processor || null,\n      operating_system: osMatch ? osMatch[1] : null,\n      display: row.SSD\n        ? String(row.SSD).replace(/^Display:\\s*/i, \"\")\n        : null,\n      warranty: null,\n      source: \"Laptop CSV - GitHub Gist\"\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        752
+      ],
+      "id": "5df05d66-3ca0-46ce-ab95-2b58d6122741",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM (\n  SELECT DISTINCT ON (product_name, price_inr)\n    product_name,\n    price_inr,\n    ram_gb,\n    storage_gb,\n    storage_type,\n    processor,\n    operating_system\n  FROM public.laptops\n  WHERE ram_gb >= $1::INTEGER\n    AND storage_gb >= $2::INTEGER\n    AND price_inr <= $3::NUMERIC\n    AND ($5::TEXT = 'any' OR product_name ILIKE '%' || $5::TEXT || '%')\n  ORDER BY product_name, price_inr\n) AS unique_laptops\nORDER BY ram_gb DESC, price_inr DESC\nLIMIT $4::INTEGER;",
+        "options": {
+          "queryReplacement": "={{ $json.min_ram_gb ?? 0 }}, {{ $json.min_storage_gb ?? 0 }}, {{ $json.budget_max_inr ?? 100000000 }}, {{ $json.result_count ?? 3 }}, {{ $json.brand ?? 'any' }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        992,
+        0
+      ],
+      "id": "295c4ffe-0d10-4be2-b48e-06b21c2cf22f",
+      "name": "Execute a SQL query",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "aI4RjSOBPPMmejQI",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "subject:\"Laptop enquiry\""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -32,
+        0
+      ],
+      "id": "bbddc968-26bb-4338-a6e2-a719b768a21e",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lkYrNNjvWp8Pzbjm",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Edit Fields').item.json.customer_address }}",
+        "subject": "=Re: {{ $('Edit Fields').item.json.email_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.reply }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "72393ff7-f8a7-4621-b8c5-5011668fdb86",
+      "name": "Send a message",
+      "webhookId": "172a2d4c-7236-4e19-a604-5020e9c0888b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "lkYrNNjvWp8Pzbjm",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "One-time data load: downloads the open-source laptop CSV, cleans it, and inserts it into Neon. Already run. Do not re-run (would duplicate rows).",
+        "height": 576,
+        "width": 592
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        464
+      ],
+      "id": "58866a54-56e2-4aa9-9049-a0559942a4ff",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Customer support flow: email → extract requirements → SQL search → reply",
+        "height": 448,
+        "width": 1604
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        -80
+      ],
+      "id": "b42fbac2-d42b-426f-82d5-027d6df0c9e3",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalizes the customer's requirements into numbers the database query can use.\nconst x = $input.first().json.output ?? $input.first().json;\nconst assumptions = [];\n\nfunction parseMoney(text) {\n  if (!text) return null;\n  const t = String(text).toLowerCase().replace(/[₹,]/g, '').replace(/rs\\.?/g, '');\n  const m = t.match(/(\\d+(?:\\.\\d+)?)\\s*(k|thousand|lakh|lakhs|lac|lacs|l)?\\b/);\n  if (!m) return null;\n  let n = parseFloat(m[1]);\n  const unit = m[2];\n  if (unit === 'k' || unit === 'thousand') n *= 1000;\n  else if (unit) n *= 100000;\n  return Math.round(n);\n}\n\nfunction parseRam(text) {\n  if (!text) return null;\n  const t = String(text).toLowerCase();\n  const withGb = t.match(/(\\d+)\\s*gb/);\n  if (withGb) return parseInt(withGb[1], 10);\n  const bare = t.match(/\\b(\\d+)\\b/);\n  if (bare && parseInt(bare[1], 10) <= 128) return parseInt(bare[1], 10);\n  if (/high|more|lot|max|best|large|heavy/.test(t)) return 16;\n  if (/good|decent|enough/.test(t)) return 8;\n  return null;\n}\n\nfunction parseStorageGb(text) {\n  if (!text) return null;\n  const m = String(text).toLowerCase().match(/(\\d+(?:\\.\\d+)?)\\s*(tb|gb)/);\n  if (!m) return null;\n  return Math.round(parseFloat(m[1]) * (m[2] === 'tb' ? 1000 : 1));\n}\n\nfunction parseCount(text) {\n  if (!text) return null;\n  const t = String(text).toLowerCase();\n  const digits = t.match(/\\d+/);\n  if (digits) return parseInt(digits[0], 10);\n  const words = { one: 1, a: 1, single: 1, two: 2, three: 3, four: 4, five: 5 };\n  for (const [w, n] of Object.entries(words)) {\n    if (new RegExp('\\\\b' + w + '\\\\b').test(t)) return n;\n  }\n  return null;\n}\n\nconst budget = parseMoney(x.budget_text);\nconst ramText = String(x.ram_text ?? '');\nconst minRam = parseRam(ramText);\nconst minStorage = parseStorageGb(x.storage_text);\nconst requested = parseCount(x.quantity_text);\nconst resultCount = Math.min(Math.max(requested ?? 3, 1), 5);\nconst brand = x.brand ? String(x.brand).trim() : null;\n\nif (budget) assumptions.push('I read your budget as up to ₹' + budget.toLocaleString('en-IN') + '.');\nif (minRam && !/\\d/.test(ramText)) assumptions.push('I read \"' + ramText + '\" as ' + minRam + ' GB of RAM or more.');\nif (requested === null) assumptions.push('You did not say how many, so I am showing the top ' + resultCount + '.');\n\nconst needsClarification = !budget && !minRam && !minStorage && !brand;\n\nreturn [{\n  json: {\n    budget_max_inr: budget,\n    min_ram_gb: minRam,\n    min_storage_gb: minStorage,\n    brand,\n    result_count: resultCount,\n    needs_clarification: needsClarification,\n    assumptions\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "35e0aa48-111d-457d-beeb-9b6f1710cfed",
+      "name": "Code in JavaScript2"
+    }
+  ],
+  "connections": {
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Information Extractor": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in a table": {
+      "main": [
+        []
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Insert rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "pinData": {},
+  "triggerCount": 0,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
